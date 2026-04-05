@@ -1,52 +1,38 @@
 <?php
-// ⚠️ В проде лучше выключить, но оставлю как у тебя для отладки
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-// dp.php уже подключает site-core/bootstrap.php и запускает сессию (если её нет)
-// + создаёт $pdo и csrf_token
 require 'dp.php';
 
 $errorMsg = '';
 $emailVal = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    $emailVal = trim($_POST['email'] ?? '');
-    $pass     = (string)($_POST['password'] ?? '');
-
-    if ($emailVal === '' || $pass === '') {
-        $errorMsg = "Заполните все поля!";
-    } elseif (!filter_var($emailVal, FILTER_VALIDATE_EMAIL)) {
-        $errorMsg = "Некорректный формат Email!";
+    if (!csrf_check($_POST['csrf_token'] ?? null)) {
+        $errorMsg = 'Ошибка безопасности: неверный CSRF-токен.';
     } else {
-        $sql = "SELECT id, email, password_hash, role FROM users WHERE email = :email LIMIT 1";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([':email' => $emailVal]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        $emailVal = trim((string)($_POST['email'] ?? ''));
+        $pass = (string)($_POST['password'] ?? '');
 
-        if (!$user) {
-            $errorMsg = "Пользователь не найден.";
-        } elseif (!password_verify($pass, $user['password_hash'])) {
-            $errorMsg = "Неверный пароль.";
+        if ($emailVal === '' || $pass === '') {
+            $errorMsg = 'Заполните все поля.';
+        } elseif (!filter_var($emailVal, FILTER_VALIDATE_EMAIL)) {
+            $errorMsg = 'Некорректный формат Email.';
         } else {
-            // ❗ НЕ делаем session_start() — сессия уже запущена в bootstrap.php
+            $sql = 'SELECT id, email, password_hash, role FROM users WHERE email = :email LIMIT 1';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([':email' => $emailVal]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            // Защита от фиксации сессии
-            session_regenerate_id(true);
+            if (!$user || !password_verify($pass, (string)$user['password_hash'])) {
+                $errorMsg = 'Неверный email или пароль.';
+            } else {
+                session_regenerate_id(true);
 
-            $_SESSION['user_id'] = (int)$user['id'];
-            $_SESSION['email']   = (string)$user['email'];
-            $_SESSION['role']    = (string)$user['role'];
+                $_SESSION['user_id'] = (int)$user['id'];
+                $_SESSION['email']   = (string)$user['email'];
+                $_SESSION['role']    = (string)$user['role'];
 
-            // CSRF уже создаётся в bootstrap.php, но на всякий случай:
-            if (empty($_SESSION['csrf_token'])) {
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                ensure_csrf();
+                redirect('index.php');
             }
-
-            header('Location: index.php');
-            exit;
         }
     }
 }
@@ -67,18 +53,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <h4 class="mb-0">Вход</h4>
                 </div>
                 <div class="card-body">
-                    <?php if ($errorMsg): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($errorMsg, ENT_QUOTES, 'UTF-8') ?></div>
+                    <?php if ($errorMsg !== ''): ?>
+                        <div class="alert alert-danger"><?= e($errorMsg) ?></div>
                     <?php endif; ?>
 
                     <form method="POST" action="login.php" autocomplete="on">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                         <div class="mb-3">
                             <label class="form-label">Email</label>
                             <input type="email"
                                    name="email"
                                    class="form-control"
                                    required
-                                   value="<?= htmlspecialchars($emailVal, ENT_QUOTES, 'UTF-8') ?>">
+                                   value="<?= e($emailVal) ?>">
                         </div>
 
                         <div class="mb-3">

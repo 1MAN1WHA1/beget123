@@ -1,8 +1,6 @@
 <?php
 require 'check_admin.php';
-require 'dp.php';
 
-// Получаем данные с JOIN
 $sql = "
     SELECT
         orders.id as order_id,
@@ -16,12 +14,12 @@ $sql = "
     ORDER BY orders.id DESC
 ";
 $stmt = $pdo->query($sql);
-$orders = $stmt->fetchAll();
+$orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+    <meta charset="UTF-8">
     <title>Заказы</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
@@ -37,11 +35,11 @@ $orders = $stmt->fetchAll();
         <tbody>
             <?php foreach ($orders as $order): ?>
             <tr>
-                <td><?= $order['order_id'] ?></td>
-                <td><?= $order['created_at'] ?></td>
-                <td><?= htmlspecialchars($order['email']) ?></td>
-                <td><?= htmlspecialchars($order['title']) ?></td>
-                <td><?= $order['price'] ?> ₽</td>
+                <td><?= (int)$order['order_id'] ?></td>
+                <td><?= e((string)$order['created_at']) ?></td>
+                <td><?= e((string)$order['email']) ?></td>
+                <td><?= e((string)$order['title']) ?></td>
+                <td><?= e((string)$order['price']) ?> ₽</td>
             </tr>
             <?php endforeach; ?>
         </tbody>
