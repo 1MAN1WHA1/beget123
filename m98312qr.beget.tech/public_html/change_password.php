@@ -1,48 +1,39 @@
 <?php
-session_start();
 require 'dp.php';
-
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
+require_login();
 
 $message = '';
 $error = '';
 
-// Обработка формы на той же странице
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    // Проверка CSRF
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        $error = "Ошибка безопасности: неверный CSRF-токен!";
+    if (!csrf_check($_POST['csrf_token'] ?? null)) {
+        $error = 'Ошибка безопасности: неверный CSRF-токен.';
     } else {
-        $user_id = $_SESSION['user_id'];
-        $current = $_POST['current_password'] ?? '';
-        $new = $_POST['new_password'] ?? '';
-        $confirm = $_POST['confirm_password'] ?? '';
+        $user_id = (int)$_SESSION['user_id'];
+        $current = (string)($_POST['current_password'] ?? '');
+        $new = (string)($_POST['new_password'] ?? '');
+        $confirm = (string)($_POST['confirm_password'] ?? '');
 
-        // Проверка совпадения нового пароля и подтверждения
         if ($new !== $confirm) {
-            $error = "Новый пароль и подтверждение не совпадают!";
+            $error = 'Новый пароль и подтверждение не совпадают.';
+        } elseif (mb_strlen($new) < 6) {
+            $error = 'Новый пароль должен содержать минимум 6 символов.';
         } else {
-            // Проверка текущего пароля
-            $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
+            $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE id = ?');
             $stmt->execute([$user_id]);
-            $user = $stmt->fetch();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$user || !password_verify($current, $user['password_hash'])) {
-                $error = "Текущий пароль неверен!";
+            if (!$user || !password_verify($current, (string)$user['password_hash'])) {
+                $error = 'Текущий пароль неверен.';
             } else {
-                // Обновление пароля
                 $new_hash = password_hash($new, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("UPDATE users SET password_hash = :hash WHERE id = :id");
+                $stmt = $pdo->prepare('UPDATE users SET password_hash = :hash WHERE id = :id');
                 $stmt->execute([
                     ':hash' => $new_hash,
-                    ':id' => $user_id
+                    ':id' => $user_id,
                 ]);
 
-                $message = "Пароль успешно изменён!";
+                $message = 'Пароль успешно изменён.';
             }
         }
     }
@@ -62,16 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <h2>Сменить пароль</h2>
 
-    <?php if($message): ?>
-        <div class="alert alert-success"><?= $message ?></div>
+    <?php if ($message !== ''): ?>
+        <div class="alert alert-success"><?= e($message) ?></div>
     <?php endif; ?>
 
-    <?php if($error): ?>
-        <div class="alert alert-danger"><?= $error ?></div>
+    <?php if ($error !== ''): ?>
+        <div class="alert alert-danger"><?= e($error) ?></div>
     <?php endif; ?>
 
     <form action="" method="POST" class="mt-3">
-        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
 
         <div class="mb-3">
             <label class="form-label">Текущий пароль</label>
@@ -80,12 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div class="mb-3">
             <label class="form-label">Новый пароль</label>
-            <input type="password" name="new_password" class="form-control" required>
+            <input type="password" name="new_password" class="form-control" required minlength="6">
         </div>
 
         <div class="mb-3">
             <label class="form-label">Подтвердите новый пароль</label>
-            <input type="password" name="confirm_password" class="form-control" required>
+            <input type="password" name="confirm_password" class="form-control" required minlength="6">
         </div>
 
         <button type="submit" class="btn btn-primary">Сменить пароль</button>

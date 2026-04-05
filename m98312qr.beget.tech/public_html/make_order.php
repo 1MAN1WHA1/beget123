@@ -1,30 +1,27 @@
 <?php
-session_start();
 require 'dp.php';
+require_login();
 
-if (!isset($_SESSION['user_id'])) {
-    die("Войдите в аккаунт");
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    die('Неверный метод');
 }
 
-if (
-    !isset($_POST['csrf_token']) ||
-    !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])
-) {
-    die("CSRF ошибка");
+if (!csrf_check($_POST['csrf_token'] ?? null)) {
+    http_response_code(400);
+    die('CSRF ошибка');
 }
 
-$user_id = $_SESSION['user_id'];
+$user_id = (int)$_SESSION['user_id'];
 $product_id = (int)($_POST['product_id'] ?? 0);
 
-$stmt = $pdo->prepare("SELECT id FROM products WHERE id = ?");
+$stmt = $pdo->prepare('SELECT id FROM products WHERE id = ?');
 $stmt->execute([$product_id]);
-
-if (!$stmt->fetch()) {
-    die("Товар не найден");
+if (!$stmt->fetchColumn()) {
+    die('Товар не найден');
 }
 
-$stmt = $pdo->prepare("INSERT INTO orders (user_id, product_id) VALUES (?, ?)");
+$stmt = $pdo->prepare('INSERT INTO orders (user_id, product_id) VALUES (?, ?)');
 $stmt->execute([$user_id, $product_id]);
 
-header("Location: profile.php");
-exit;
+redirect('profile.php');

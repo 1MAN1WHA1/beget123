@@ -1,25 +1,24 @@
 <?php
 require_once 'check_admin.php';
-require_once 'dp.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-$message = "";
+$message = '';
 
 function exportProductsToCsv(PDO $pdo): string {
     $exportDir = __DIR__ . '/exports/';
-    if (!is_dir($exportDir)) mkdir($exportDir, 0755, true);
+    if (!is_dir($exportDir) && !mkdir($exportDir, 0755, true)) {
+        return 'Не удалось создать папку exports.';
+    }
 
     $filename = 'products_' . date('Y-m-d_H-i-s') . '.csv';
     $fullPath = $exportDir . $filename;
 
-    $stmt = $pdo->query("SELECT * FROM products ORDER BY id ASC");
+    $stmt = $pdo->query('SELECT * FROM products ORDER BY id ASC');
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $fp = fopen($fullPath, 'w');
-    if (!$fp) return "Не удалось создать CSV файл.";
+    if (!$fp) {
+        return 'Не удалось создать CSV файл.';
+    }
 
     if (empty($rows)) {
         fputcsv($fp, ['empty']);
@@ -37,16 +36,20 @@ function exportProductsToCsv(PDO $pdo): string {
 }
 
 function seedProducts(PDO $pdo, int $count): string {
-    if ($count < 1) return "Количество должно быть > 0.";
+    if ($count < 1) {
+        return 'Количество должно быть > 0.';
+    }
 
-    $tplStmt = $pdo->query("SELECT * FROM products ORDER BY RAND() LIMIT 1");
+    $tplStmt = $pdo->query('SELECT * FROM products ORDER BY RAND() LIMIT 1');
     $tpl = $tplStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$tpl) return "В products нет ни одной записи — сначала добавь товар вручную.";
+    if (!$tpl) {
+        return 'В products нет ни одной записи — сначала добавьте товар вручную.';
+    }
 
-    $ins = $pdo->prepare("
+    $ins = $pdo->prepare('
         INSERT INTO products (title, description, price, image_url, is_course)
         VALUES (?, ?, ?, ?, ?)
-    ");
+    ');
 
     $inserted = 0;
     for ($i = 0; $i < $count; $i++) {
@@ -54,7 +57,7 @@ function seedProducts(PDO $pdo, int $count): string {
         $title = (string)$tpl['title'] . $suffix;
 
         $price = (float)$tpl['price'];
-        $delta = mt_rand(-15, 15) / 100; // ±15%
+        $delta = random_int(-15, 15) / 100;
         $newPrice = round($price * (1 + $delta), 2);
 
         try {
@@ -75,12 +78,14 @@ function seedProducts(PDO $pdo, int $count): string {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $count = (int)($_POST['count'] ?? 0);
-
-    $m1 = exportProductsToCsv($pdo);
-    $m2 = seedProducts($pdo, $count);
-
-    $message = $m1 . "<br>" . $m2;
+    if (!csrf_check($_POST['csrf_token'] ?? null)) {
+        $message = 'Ошибка безопасности: неверный CSRF-токен.';
+    } else {
+        $count = (int)($_POST['count'] ?? 0);
+        $m1 = exportProductsToCsv($pdo);
+        $m2 = seedProducts($pdo, $count);
+        $message = $m1 . '<br>' . $m2;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -99,11 +104,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <div class="card-body">
 
-            <?php if ($message): ?>
+            <?php if ($message !== ''): ?>
                 <div class="alert alert-info"><?= $message ?></div>
             <?php endif; ?>
 
             <form method="POST" class="mb-3">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div class="mb-2">
                     <label class="form-label">Сколько товаров/курсов добавить?</label>
                     <input type="number" name="count" class="form-control" value="50" min="1" max="1000" required>

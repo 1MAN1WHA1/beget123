@@ -1,22 +1,17 @@
 <?php
-session_start();
 require 'dp.php';
-
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
-}
+require_login();
 
 $order_id = (int)($_GET['id'] ?? 0);
 $user_id  = (int)$_SESSION['user_id'];
 
 if ($order_id <= 0) {
-    die("Заказ не найден.");
+    http_response_code(404);
+    die('Заказ не найден');
 }
 
-// Anti-IDOR: ищем заказ по id И по владельцу
 $sql = "
-    SELECT 
+    SELECT
         orders.id as order_id,
         orders.created_at,
         orders.status,
@@ -31,10 +26,11 @@ $sql = "
 ";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([$order_id, $user_id]);
-$order = $stmt->fetch();
+$order = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$order) {
-    die("Заказ не найден или у вас нет прав на его просмотр.");
+    http_response_code(404);
+    die('Заказ не найден или у вас нет прав на его просмотр');
 }
 ?>
 <!DOCTYPE html>
@@ -51,20 +47,20 @@ if (!$order) {
     <div class="card shadow-sm">
         <div class="card-header bg-white">
             <h4 class="mb-0">Заказ #<?= (int)$order['order_id'] ?></h4>
-            <small class="text-muted"><?= htmlspecialchars($order['created_at']) ?></small>
+            <small class="text-muted"><?= e((string)$order['created_at']) ?></small>
         </div>
 
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <?php $img = $order['image_url'] ?: 'https://via.placeholder.com/300'; ?>
-                    <img src="<?= htmlspecialchars($img) ?>" class="img-fluid rounded" alt="Фото">
+                    <?php $img = !empty($order['image_url']) ? (string)$order['image_url'] : 'https://via.placeholder.com/300'; ?>
+                    <img src="<?= e($img) ?>" class="img-fluid rounded" alt="Фото">
                 </div>
                 <div class="col-md-8">
-                    <h5><?= htmlspecialchars($order['title']) ?></h5>
-                    <p class="text-muted"><?= htmlspecialchars($order['description'] ?? '') ?></p>
+                    <h5><?= e((string)$order['title']) ?></h5>
+                    <p class="text-muted"><?= e((string)($order['description'] ?? '')) ?></p>
                     <p class="fw-bold">Цена: <?= number_format((float)$order['price'], 0, '', ' ') ?> ₽</p>
-                    <p>Статус: <span class="badge bg-secondary"><?= htmlspecialchars($order['status']) ?></span></p>
+                    <p>Статус: <span class="badge bg-secondary"><?= e((string)$order['status']) ?></span></p>
                 </div>
             </div>
         </div>

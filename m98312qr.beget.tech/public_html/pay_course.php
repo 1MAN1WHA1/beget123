@@ -1,48 +1,51 @@
 <?php
-session_start();
 require 'dp.php';
+require_login();
 
-// ВАЖНО: чтобы видеть реальную причину ошибки (на время отладки)
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    redirect('index.php');
+}
 
-// Чтобы PDO бросал исключения (если в dp.php не настроено)
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
+if (!csrf_check($_POST['csrf_token'] ?? null)) {
+    http_response_code(400);
+    die('CSRF токен неверный');
 }
 
 $user_id = (int)$_SESSION['user_id'];
 $course_id = (int)($_POST['course_id'] ?? 0);
-$payment_method = trim($_POST['payment_method'] ?? 'card');
+$payment_method = (string)($_POST['payment_method'] ?? 'card');
+$allowedMethods = ['card', 'sbp', 'wallet'];
 
 if ($course_id <= 0) {
-    die("Некорректный курс");
+    http_response_code(400);
+    die('Некорректный курс');
 }
 
-// Проверяем что это курс
+if (!in_array($payment_method, $allowedMethods, true)) {
+    $payment_method = 'card';
+}
+
 $stmt = $pdo->prepare("SELECT id FROM products WHERE id = ? AND is_course = 1");
 $stmt->execute([$course_id]);
 if (!$stmt->fetchColumn()) {
-    die("Курс не найден (проверь is_course=1)");
+    http_response_code(404);
+    die('Курс не найден');
 }
 
 try {
-    // Если уже paid — просто на курс
-    $paid = $pdo->prepare("SELECT id FROM orders WHERE user_id=? AND product_id=? AND status='paid' LIMIT 1");
+    $pdo->beginTransaction();
+
+    $paid = $pdo->prepare("SELECT id FROM orders WHERE user_id = ? AND product_id = ? AND status = 'paid' LIMIT 1");
     $paid->execute([$user_id, $course_id]);
     if ($paid->fetchColumn()) {
-        header("Location: course.php?id=" . $course_id);
-        exit;
+        $pdo->commit();
+        redirect('course.php?id=' . $course_id);
     }
 
-    // Ищем последний new заказ по этому курсу
     $checkNew = $pdo->prepare("
-        SELECT id FROM orders 
-        WHERE user_id=? AND product_id=? AND status='new'
+        SELECT id
+        FROM orders
+        WHERE user_id = ? AND product_id = ? AND status = 'new'
         ORDER BY id DESC
         LIMIT 1
     ");
@@ -50,22 +53,19 @@ try {
     $newOrderId = $checkNew->fetchColumn();
 
     if ($newOrderId) {
-        // Обновляем new -> paid
-        $upd = $pdo->prepare("UPDATE orders SET status='paid', payment_method=? WHERE id=?");
+        $upd = $pdo->prepare("UPDATE orders SET status = 'paid', payment_method = ? WHERE id = ?");
         $upd->execute([$payment_method, $newOrderId]);
     } else {
-        // Создаём paid заказ
         $ins = $pdo->prepare("INSERT INTO orders (user_id, product_id, status, payment_method) VALUES (?, ?, 'paid', ?)");
         $ins->execute([$user_id, $course_id, $payment_method]);
     }
 
-    header("Location: course.php?id=" . $course_id);
-    exit;
-
+    $pdo->commit();
+    redirect('course.php?id=' . $course_id);
 } catch (Throwable $e) {
-    // Самая частая причина: status не позволяет 'paid' (ENUM без paid)
-    echo "<h1>Ошибка оплаты</h1>";
-    echo "<p><b>Причина:</b> " . htmlspecialchars($e->getMessage()) . "</p>";
-    echo "<p>Проверь тип поля <code>orders.status</code>. Если это ENUM и там нет <code>paid</code> — добавь его:</p>";
-    echo "<pre>ALTER TABLE orders MODIFY status ENUM('new','paid') NOT NULL DEFAULT 'new';</pre>";
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    redirect('buy_course.php?id=' . $course_id . '&err=payment');
 }
