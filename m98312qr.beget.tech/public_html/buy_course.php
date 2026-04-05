@@ -1,34 +1,29 @@
 <?php
-session_start();
 require 'dp.php';
-
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
-}
+require_login();
 
 $user_id = (int)$_SESSION['user_id'];
 $course_id = (int)($_GET['id'] ?? 0);
+$error = ($_GET['err'] ?? '') === 'payment' ? 'Не удалось провести оплату. Попробуйте ещё раз.' : '';
 
 if ($course_id <= 0) {
-    die("Некорректный курс");
+    http_response_code(400);
+    die('Некорректный курс');
 }
 
-// Проверяем, что это курс
 $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ? AND is_course = 1");
 $stmt->execute([$course_id]);
 $course = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$course) {
-    die("Курс не найден (проверь is_course=1 у товара)");
+    http_response_code(404);
+    die('Курс не найден');
 }
 
-// Если уже paid — на курс
-$paid = $pdo->prepare("SELECT id FROM orders WHERE user_id=? AND product_id=? AND status='paid' LIMIT 1");
+$paid = $pdo->prepare("SELECT id FROM orders WHERE user_id = ? AND product_id = ? AND status = 'paid' LIMIT 1");
 $paid->execute([$user_id, $course_id]);
 if ($paid->fetchColumn()) {
-    header("Location: course.php?id=" . $course_id);
-    exit;
+    redirect('course.php?id=' . $course_id);
 }
 ?>
 <!doctype html>
@@ -45,11 +40,16 @@ if ($paid->fetchColumn()) {
 
     <div class="card shadow-sm">
         <div class="card-body">
-            <h1 class="h4">Оплата: <?= htmlspecialchars($course['title']) ?></h1>
-            <p class="mb-1"><b>Сумма:</b> <?= htmlspecialchars($course['price']) ?> ₽</p>
+            <h1 class="h4">Оплата: <?= e((string)$course['title']) ?></h1>
+            <p class="mb-1"><b>Сумма:</b> <?= e((string)$course['price']) ?> ₽</p>
+
+            <?php if ($error !== ''): ?>
+                <div class="alert alert-danger mt-3"><?= e($error) ?></div>
+            <?php endif; ?>
 
             <form method="post" action="pay_course.php" class="mt-3">
                 <input type="hidden" name="course_id" value="<?= (int)$course_id ?>">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
 
                 <div class="mb-2">Способ оплаты:</div>
 
